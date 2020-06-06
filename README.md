@@ -114,7 +114,7 @@ pip3 install -r requirements.txt
 Run the following command to run the program using `demo.mp4` using `FP16`.
 
 ```bash
-python3 main.py -f model/intel/face-detection-adas-binary-0001/FP16-INT1/face-detection-adas-binary-0001.xml -fl model/intel/landmarks-regression-retail-0009/ters/landmarks-regression-retail-0009.xml -hp model/intel/head-pose-estimation-adas-0001/FP16/head-pose-estimation-adas-0001.xml -g model/intel/gaze-estimation-adas-0002/FP16/gaze-estimation-adas-0002.xml -i demo.mp4
+python src\main.py -f models\Face_detection\face-detection-adas-binary-0001.xml -fl models\Landmarks_detection\FP16\landmarks-regression-retail-0009.xml -hp models\Head_Pose\FP16\head-pose-estimation-adas-0001.xml -g models\Gaze_Estimation\FP16\gaze-estimation-adas-0002.xml -i bin\demo.mp4
 ```
 
 ## Documentation
