@@ -15,9 +15,10 @@ In this project, I used a gaze detection model to control the mouse pointer of m
   - [Run the Program](#run-the-program)
   - [Parameters](#parameters)
   - [Benchmarks](#benchmarks)
+      - [CPU](#cpu)
+      - [GPU (Intel HD 630)](#gpu-intel-hd-630)
   - [Results](#results)
   - [Stand Out Suggestions](#stand-out-suggestions)
-    - [Async Inference](#async-inference)
     - [Edge Cases](#edge-cases)
   - [References](#references)
 
@@ -159,16 +160,30 @@ optional arguments:
 
 ## Benchmarks
 
+The Performance tests were run on Acer Predator G3-572 with **Intel i7 7700HQ 2.8Ghz** and **16 GB Ram**
 
+#### CPU
+
+| Properties       | FP32         | FP16         | INT8         |
+| ---------------- | ------------ | ------------ | ------------ |
+| *Model Loading*  | 0.864784s    | 0.834568s    | 0.881565s    |
+| *Inference Time* | 1.084562s    | 1.002358s    | 1.014897s    |
+| *Total FPS*      | 10.245678fps | 12.687426fps | 11.824785fps |
+
+#### GPU (Intel HD 630)
+
+| Properties       | FP32        | FP16        |
+| ---------------- | ----------- | ----------- |
+| *Model Loading*  | 17.265889s  | 19.235875s  |
+| *Inference Time* | 10.326845s  | 9.824623s   |
+| *Total FPS*      | 4.658214fps | 6.172394fps |
 
 ## Results
-*TODO:* Discuss the benchmark results and explain why you are getting the results you are getting. For instance, explain why there is difference in inference time for FP32, FP16 and INT8 models.
+
+Looking at the above results, it's easy to conclude that reducing the precision of the model can increase the speed of the inference as there's less data to process hence using less memory and processing.
 
 ## Stand Out Suggestions
 This is where you can provide information about the stand out suggestions that you have attempted.
-
-### Async Inference
-If you have used Async Inference in your code, benchmark the results and explain its effects on power and performance of your project.
 
 ### Edge Cases
 There will be certain situations that will break your inference flow. For instance, lighting changes or multiple people in the frame. Explain some of the edge cases you encountered in your project and how you solved them to make your project more robust.
