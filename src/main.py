@@ -40,7 +40,7 @@ def build_argparser():
                         help="Probability threshold for detections filtering"
                         "(0.6 by default)")
     parser.add_argument(
-        "-m", "--mode", help="async or sync mode", type=str, default='async')
+        "-m", "--mode", help="Select whether to run in Async or Sync mode", type=str, default='async')
     parser.add_argument("-o", "--output_dir",
                         help="Path to output directory", type=str, default=None)
     parser.add_argument("-oi", "--output_intermediate", default=None, type=str,

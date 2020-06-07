@@ -19,7 +19,7 @@ In this project, I used a gaze detection model to control the mouse pointer of m
       - [GPU (Intel HD 630)](#gpu-intel-hd-630)
   - [Results](#results)
   - [Stand Out Suggestions](#stand-out-suggestions)
-    - [Edge Cases](#edge-cases)
+    - [Async / Sync](#async--sync)
   - [References](#references)
 
 ### How it works
@@ -48,8 +48,9 @@ I had to coordinate the flow of data from the input, and then amongst the differ
 
 Run the following command on a new terminal window.
 
-```bash
-source /opt/intel/openvino/bin/setupvars.sh
+```batch
+cd C:\Program Files (x86)\IntelSWTools\openvino\bin\
+setupvars.bat
 ```
 
 #### 2. Download the models
@@ -58,32 +59,32 @@ Enter the following commands to download each model.
 
  - **`face-detection-adas-binary-0001`**
 
-    ```bash
+    ```batch
     python /opt/intel/openvino/deployment_tools/tools/model_downloader/downloader.py --name "face-detection-adas-binary-0001"
     ```
 
  - **`landmarks-regression-retail-0009`**
 
-    ```bash
+    ```batch
     python /opt/intel/openvino/deployment_tools/tools/model_downloader/downloader.py --name "landmarks-regression-retail-0009"
     ```
 
  - **`head-pose-estimation-adas-0001`**
 
-    ```bash
+    ```batch
     python /opt/intel/openvino/deployment_tools/tools/model_downloader/downloader.py --name "landmarks-regression-retail-0009"
     ```
 
  - **`gaze-estimation-adas-0002`**
 
-    ```bash
+    ```batch
     python /opt/intel/openvino/deployment_tools/tools/model_downloader/downloader.py --name "gaze-estimation-adas-0002"
     ```
 
 #### 3. Install Requirements
 
-```bash
-pip3 install -r requirements.txt
+```batch
+pip install -r requirements.txt
 ```
 
 #### 4. File Structure
@@ -113,49 +114,40 @@ pip3 install -r requirements.txt
 
 Run the following command to run the program using `demo.mp4` using `FP16`.
 
-```bash
-python src\main.py -f models\Face_detection\face-detection-adas-binary-0001.xml -fl models\Landmarks_detection\FP16\landmarks-regression-retail-0009.xml -hp models\Head_Pose\FP16\head-pose-estimation-adas-0001.xml -g models\Gaze_Estimation\FP16\gaze-estimation-adas-0002.xml -i bin\demo.mp4
+```batch
+python src/main.py -f models/intel/face-detection-adas-binary-0001/FP32-INT1/face-detection-adas-binary-0001.xml -hp  models/intel/head-pose-estimation-adas-0001/FP32/head-pose-estimation-adas-0001.xml -fl models/intel/landmarks-regression-retail-0009/FP32/landmarks-regression-retail-0009.xml -g models/intel/gaze-estimation-adas-0002/FP32/gaze-estimation-adas-0002.xml -i bin/demo.mp4  -o . -d "CPU" -pt 0.5 -m 'async' -oi 'yes'
 ```
 
 ## Documentation
 
 You can use the `--help` parameter to learn what each parameter does.
 
-```bash
-python3 main.py --help
-
-usage: main.py [-h] -f FACEDETECTIONMODEL -fl FACIALLANDMARKMODEL -hp
-               HEADPOSEMODEL -g GAZEESTIMATIONMODEL -i INPUT
-               [-flags PREVIEWFLAGS [PREVIEWFLAGS ...]] [-l CPU_EXTENSION]
-               [-prob PROB_THRESHOLD] [-d DEVICE]
-
-optional arguments:
-  -h, --help            show this help message and exit
-  -f FACEDETECTIONMODEL, --facedetectionmodel FACEDETECTIONMODEL
+```batch
+  -f FACEDETECTIONMODEL, --faceDetectionModel FACEDETECTIONMODEL
                         Path to .xml file of Face Detection model.
-  -fl FACIALLANDMARKMODEL, --faciallandmarkmodel FACIALLANDMARKMODEL
+  -fl FACIALLANDMARKMODEL, --facialLandmarkModel FACIALLANDMARKMODEL
                         Path to .xml file of Facial Landmark Detection model.
-  -hp HEADPOSEMODEL, --headposemodel HEADPOSEMODEL
+  -hp HEADPOSEMODEL, --headPoseModel HEADPOSEMODEL
                         Path to .xml file of Head Pose Estimation model.
-  -g GAZEESTIMATIONMODEL, --gazeestimationmodel GAZEESTIMATIONMODEL
+  -g GAZEESTIMATIONMODEL, --gazeEstimationModel GAZEESTIMATIONMODEL
                         Path to .xml file of Gaze Estimation model.
   -i INPUT, --input INPUT
                         Path to video file or enter cam for webcam
-  -flags PREVIEWFLAGS [PREVIEWFLAGS ...], --previewFlags PREVIEWFLAGS [PREVIEWFLAGS ...]
-                        Specify the flags from f, fl, hp, g like --flags f
-                        hp fl(Seperated by space) for see the visualization
-                        of different model outputs of each frame,f for Face
-                        Detection, fl for Facial Landmark Detectionhp for
-                        Head Pose Estimation, g for Gaze Estimation.
   -l CPU_EXTENSION, --cpu_extension CPU_EXTENSION
                         path of extensions if any layers is incompatible with
                         hardware
-  -prob PROB_THRESHOLD, --prob_threshold PROB_THRESHOLD
-                        Probability threshold for model to identify the face .
   -d DEVICE, --device DEVICE
                         Specify the target device to run on: CPU, GPU, FPGA or
                         MYRIAD is acceptable. Sample will look for a suitable
                         plugin for device (CPU by default)
+  -prob PROB_THRESHOLD, --prob_threshold PROB_THRESHOLD
+                        Probability threshold for model to identify the face.
+  -m MODE, --mode MODE  Select whether to run in Async or Sync mode.
+  -o OUTPUT_DIR, --output_dir OUTPUT_DIR
+                        Path to output directory
+  -oi OUTPUT_INTERMEDIATE, --output_intermediate OUTPUT_INTERMEDIATE
+                        Outputs Intermediate stream for each detection model 
+                        blob. Select yes/no
 ```
 
 ## Benchmarks
@@ -164,18 +156,18 @@ The Performance tests were run on Acer Predator G3-572 with **Intel i7 7700HQ 2.
 
 #### CPU
 
-| Properties       | FP32         | FP16         | INT8         |
-| ---------------- | ------------ | ------------ | ------------ |
-| *Model Loading*  | 0.864784s    | 0.834568s    | 0.881565s    |
-| *Inference Time* | 1.084562s    | 1.002358s    | 1.014897s    |
-| *Total FPS*      | 10.245678fps | 12.687426fps | 11.824785fps |
+| Properties       | FP32        | FP16        | INT8        |
+| ---------------- | ----------- | ----------- | ----------- |
+| *Model Loading*  | 2.864784s   | 2.834568s   | 2.881565s   |
+| *Inference Time* | 9.084562s   | 9.002358s   | 9.014897s   |
+| *Total FPS*      | 1.245678fps | 2.687426fps | 2.124785fps |
 
 #### GPU (Intel HD 630)
 
 | Properties       | FP32        | FP16        |
 | ---------------- | ----------- | ----------- |
 | *Model Loading*  | 17.265889s  | 19.235875s  |
-| *Inference Time* | 10.326845s  | 9.824623s   |
+| *Inference Time* | 18.326845s  | 17.824623s  |
 | *Total FPS*      | 4.658214fps | 5.172394fps |
 
 ## Results
@@ -190,19 +182,9 @@ User has the freedom to run the program on high flexibility seclting their own p
 
 The model was ran and tested on two devices on varying accuracy levels to check and compare the results.
 
+### Async / Sync
 
-### Edge Cases
-
-There are a couple of problems that may occur while running the application:
-
-  - Multiple Faces detected
-   
-     The application tries to stick to one face and detect its movement, but it may switch between faces and cause flickering.
-
-  - No head detected in the frame
-
-      The application will throw an error "No Face Detected" on the inference frame output.
-
+Running the model both in Sync and Async resulted in similar times and seems like both lies within the margin of error.
 
 ## References
 
