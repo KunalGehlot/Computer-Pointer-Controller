@@ -10,15 +10,10 @@ from face_detection import FaceDetectionModel
 from facial_landmarks_detection import FacialLandmarksDetectionModel
 from gaze_estimation import GazeEstimationModel
 from head_pose_estimation import HeadPoseEstimationModel
-
 DET_FLAG = False
 
 
 def build_argparser():
-    """
-        Parse command line arguments.
-        :return: command line arguments
-    """
     parser = ArgumentParser(
         "*-*-*-*-*-*-*-*-*-*-*-*    Run Inference with Video/ Image    *-*-*-*-*-*-*-*-*-*-*-*")
     parser.add_argument("-f", "--faceDetectionModel", required=True, type=str,
@@ -50,39 +45,29 @@ def build_argparser():
                         help="Path to output directory", type=str, default=None)
     parser.add_argument("-oi", "--output_intermediate", default=None, type=str,
                         help="Outputs Intermediate stream for each detection model blob. Select yes/no ")
-
     return parser
 
 
 def main():
-    """
-        Load the network and parse the output.
-        :return: None
-    """
     global DET_FLAG
-
     args = build_argparser().parse_args()
-
     log.basicConfig(format="[ %(levelname)s ] %(message)s",
                     level=log.INFO, stream=sys.stdout)
     logger = log.getLogger()
-
     if args.input.lower() == "cam":
         feed = InputFeeder(input_type='cam')
     else:
         feed = InputFeeder(input_type='video', input_file=args.input)
         assert os.path.isfile(
             args.input), "Specified input file doesn't exist."
-
-    cap = cv2.VideoCapture(feed)
-    initial_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    initial_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    video_len = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    fps = int(cap.get(cv2.CAP_PROP_FPS))
+    cap2 = cv2.VideoCapture(args.input)
+    initial_w = int(cap2.get(cv2.CAP_PROP_FRAME_WIDTH))
+    initial_h = int(cap2.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    video_len = int(cap2.get(cv2.CAP_PROP_FRAME_COUNT))
+    fps = int(cap2.get(cv2.CAP_PROP_FPS))
 
     out = cv2.VideoWriter(os.path.join(args.output_dir, "output.mp4"),
                           cv2.VideoWriter_fourcc(*"MP4V"), fps, (initial_w, initial_h), True)
-
     if args.output_intermediate == 'yes':
         out_fm = cv2.VideoWriter(os.path.join(args.output_dir, "output_fm.mp4"),
                                  cv2.VideoWriter_fourcc(*"MP4V"), fps, (initial_w, initial_h), True)
@@ -92,67 +77,53 @@ def main():
                                  cv2.VideoWriter_fourcc(*"MP4V"), fps, (initial_w, initial_h), True)
         out_gm = cv2.VideoWriter(os.path.join(args.output_dir, "output_gm.mp4"),
                                  cv2.VideoWriter_fourcc(*"MP4V"), fps, (initial_w, initial_h), True)
-
     if args.mode == 'sync':
         sync_flag = False
     else:
         sync_flag = True
-
     start_time = time.time()
-
     if args.cpu_extension:
         model_face = FaceDetectionModel(
-            args.facemodel, args.confidence, extensions=args.cpu_extension, async_mode=sync_flag)
+            args.faceDetectionModel, args.prob_threshold, extensions=args.cpu_extension, async_mode=sync_flag)
         model_pose = HeadPoseEstimationModel(
-            args.posemodel, args.confidence, extensions=args.cpu_extension, async_mode=sync_flag)
+            args.headPoseModel, args.prob_threshold, extensions=args.cpu_extension, async_mode=sync_flag)
         model_land = FacialLandmarksDetectionModel(
-            args.landmarksmodel, args.confidence, extensions=args.cpu_extension, async_mode=sync_flag)
+            args.facialLandmarkModel, args.prob_threshold, extensions=args.cpu_extension, async_mode=sync_flag)
         model_gaze = GazeEstimationModel(
-            args.gazemodel, args.confidence, extensions=args.cpu_extension, async_mode=sync_flag)
+            args.gazeEstimationModel, args.prob_threshold, extensions=args.cpu_extension, async_mode=sync_flag)
     else:
         model_face = FaceDetectionModel(
-            args.facemodel, args.confidence, async_mode=sync_flag)
+            args.faceDetectionModel, args.prob_threshold, async_mode=sync_flag)
         model_pose = HeadPoseEstimationModel(
-            args.posemodel, args.confidence, async_mode=sync_flag)
+            args.headPoseModel, args.prob_threshold, async_mode=sync_flag)
         model_land = FacialLandmarksDetectionModel(
-            args.landmarksmodel, args.confidence, async_mode=sync_flag)
+            args.facialLandmarkModel, args.prob_threshold, async_mode=sync_flag)
         model_gaze = GazeEstimationModel(
-            args.gazemodel, args.confidence, async_mode=sync_flag)
-
+            args.gazeEstimationModel, args.prob_threshold, async_mode=sync_flag)
     model_face.load_model()
     model_pose.load_model()
     model_land.load_model()
     model_gaze.load_model()
-
     model_time = time.time() - start_time
-
     feed.load_data()
-
     frames = 0
     inference_time = 0
     inf_start_time = time.time()
     controller = MouseController("medium", "fast")
 
     for flag, frame in feed.next_batch():
-
         if not flag:
             break
-
         frames += 1
         DET_FLAG = False
-
         if frames % 5 == 0:
             cv2.imshow('video', cv2.resize(frame, (500, 500)))
-
         key = cv2.waitKey(60)
         infer_start = time.time()
-
         coords, frame = model_face.predict(
-            frame.copy(), args.prob_threshold)
-
+            frame)
         if args.output_intermediate == 'yes':
             out_fm.write(frame)
-
         if type(coords) == int:
             logger.error("No face detected.")
             if key == 27:
@@ -160,34 +131,27 @@ def main():
             continue
 
         if len(coords) > 0:
-
             [xmin, ymin, xmax, ymax] = coords[0]
             head_pose = frame[ymin:ymax, xmin:xmax]
             is_looking, pose = model_pose.predict(head_pose)
-            if args.write_intermediate == 'yes':
+            if args.output_intermediate == 'yes':
                 p = "Pose Angles {}, is Looking? {}".format(
                     pose, is_looking)
                 cv2.putText(frame, p, (50, 15), cv2.FONT_HERSHEY_COMPLEX,
                             0.5, (255, 0, 0), 1)
                 out_pm.write(frame)
-
             if is_looking:
                 DET_FLAG = True
                 coords, f = model_land.predict(head_pose)
-
                 frame[ymin:ymax, xmin:xmax] = f
-
-                if args.write_intermediate == "yes":
+                if args.output_intermediate == "yes":
                     out_lm.write(frame)
-
                 [[xlmin, ylmin, xlmax, ylmax], [xrmin, yrmin, xrmax, yrmax]] = coords
                 lEyeImg = f[ylmin:ylmax, xlmin:xlmax]
                 rEyeImg = f[yrmin:yrmax, xrmin:xrmax]
-
                 mouse_coords, gaze_vector = model_gaze.predict(
                     lEyeImg, rEyeImg, pose)
-
-                if args.write_intermediate == 'yes':
+                if args.output_intermediate == 'yes':
                     p = "Gaze Vector {}".format(gaze_vector)
                     cv2.putText(frame, p, (50, 15), cv2.FONT_HERSHEY_COMPLEX,
                                 0.5, (255, 0, 0), 1)
@@ -195,14 +159,10 @@ def main():
                     fr = gazeMarker(rEyeImg, gaze_vector)
                     f[ylmin:ylmax, xlmin:xlmax] = fl
                     f[yrmin:yrmax, xrmin:xrmax] = fr
-
                     out_gm.write(frame)
-
                 if frames % 5 == 0:
                     controller.move(mouse_coords[0], mouse_coords[1])
-
         inference_time += time.time() - infer_start
-
         out.write(frame)
         if frames % 5 == 0:
             print("Inference time = ", int(time.time()-infer_start))
@@ -213,20 +173,16 @@ def main():
             with open(os.path.join(args.output_dir, 'stats.txt'), 'w') as f:
                 f.write(str(round(total_time, 1))+'\n')
                 f.write(str(frames)+'\n')
-
     if args.output_dir:
         with open(os.path.join(args.output_dir, 'stats.txt'), 'a') as f:
             f.write(str(round(model_time))+'\n')
-
     cv2.destroyAllWindows()
     out.release()
-    
-    if args.write_intermediate == 'yes':
+    if args.output_intermediate == 'yes':
         out_fm.release()
         out_pm.release()
         out_lm.release()
         out_gm.release()
-
     fps = frames / inference_time
     logger.error("Video Done...")
     logger.error("Total Loading time: " + str(model_time) + " s")
@@ -234,7 +190,6 @@ def main():
     logger.error("Average Inference time: " +
                  str(inference_time/frames) + " s")
     logger.error("fps {} frames/second".format(fps/5))
-
     cv2.destroyAllWindows()
     feed.close()
 

@@ -16,7 +16,7 @@ class HeadPoseEstimationModel:
         self.exec_network = None
         self.input_name = None
         self.input_shape = None
-        self.output_shape = None
+        self.output_name = None
         self.output_shape = None
         self.threshold = threshold
         self.initial_w = None

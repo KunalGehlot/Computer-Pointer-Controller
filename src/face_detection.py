@@ -15,7 +15,7 @@ class FaceDetectionModel:
         self.exec_network = None
         self.input_name = None
         self.input_shape = None
-        self.output_shape = None
+        self.output_name = None
         self.output_shape = None
         self.threshold = threshold
         self.initial_w = None
@@ -31,8 +31,8 @@ class FaceDetectionModel:
         self.check_plugin(self.plugin)
         self.exec_network = self.plugin.load(self.network)
         self.input_name = next(iter(self.network.inputs))
-        self.output_shape = next(iter(self.network.outputs))
-        self.output_shape = self.network.outputs[self.output_shape].shape
+        self.output_name = next(iter(self.network.outputs))
+        self.output_shape = self.network.outputs[self.output_name].shape
 
     def predict(self, image):
         count = 0
@@ -47,7 +47,7 @@ class FaceDetectionModel:
             self.exec_network.requests[0].infer(
                 inputs={self.input_name: frame})
         if self.exec_network.requests[0].wait(-1) == 0:
-            outputs = self.exec_network.requests[0].outputs[self.output_shape]
+            outputs = self.exec_network.requests[0].outputs[self.output_name]
             frame, coords = self.process_out(image, outputs)
             return coords, frame
 

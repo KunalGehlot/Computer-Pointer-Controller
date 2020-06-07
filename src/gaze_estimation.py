@@ -17,7 +17,7 @@ class GazeEstimationModel:
         self.exec_network = None
         self.input_name = None
         self.input_shape = None
-        self.output_shape = None
+        self.output_name = None
         self.output_shape = None
         self.threshold = threshold
         self.initial_w = None
@@ -35,7 +35,6 @@ class GazeEstimationModel:
         self.input_pose_angles = self.network.inputs['head_pose_angles']
         self.output_name = next(iter(self.network.outputs))
         self.output_shape = self.network.outputs[self.output_name].shape
-        print("GazeEstimation Model output shape : ", self.output_shape)
 
     def check_plugin(self, plugin):
         unsupported_layers = [l for l in self.network.layers.keys(
