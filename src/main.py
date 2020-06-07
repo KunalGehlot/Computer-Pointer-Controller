@@ -163,10 +163,10 @@ def main():
 
             [xmin, ymin, xmax, ymax] = coords[0]
             head_pose = frame[ymin:ymax, xmin:xmax]
-            is_looking, pose_angles = model_pose.predict(head_pose)
+            is_looking, pose = model_pose.predict(head_pose)
             if args.write_intermediate == 'yes':
                 p = "Pose Angles {}, is Looking? {}".format(
-                    pose_angles, is_looking)
+                    pose, is_looking)
                 cv2.putText(frame, p, (50, 15), cv2.FONT_HERSHEY_COMPLEX,
                             0.5, (255, 0, 0), 1)
                 out_pm.write(frame)
@@ -181,18 +181,18 @@ def main():
                     out_lm.write(frame)
 
                 [[xlmin, ylmin, xlmax, ylmax], [xrmin, yrmin, xrmax, yrmax]] = coords
-                left_eye_image = f[ylmin:ylmax, xlmin:xlmax]
-                right_eye_image = f[yrmin:yrmax, xrmin:xrmax]
+                lEyeImg = f[ylmin:ylmax, xlmin:xlmax]
+                rEyeImg = f[yrmin:yrmax, xrmin:xrmax]
 
                 mouse_coords, gaze_vector = model_gaze.predict(
-                    left_eye_image, right_eye_image, pose_angles)
+                    lEyeImg, rEyeImg, pose)
 
                 if args.write_intermediate == 'yes':
                     p = "Gaze Vector {}".format(gaze_vector)
                     cv2.putText(frame, p, (50, 15), cv2.FONT_HERSHEY_COMPLEX,
                                 0.5, (255, 0, 0), 1)
-                    fl = gazeMarker(left_eye_image, gaze_vector)
-                    fr = gazeMarker(right_eye_image, gaze_vector)
+                    fl = gazeMarker(lEyeImg, gaze_vector)
+                    fr = gazeMarker(rEyeImg, gaze_vector)
                     f[ylmin:ylmax, xlmin:xlmax] = fl
                     f[yrmin:yrmax, xrmin:xrmax] = fr
 
@@ -218,15 +218,9 @@ def main():
         with open(os.path.join(args.output_dir, 'stats.txt'), 'a') as f:
             f.write(str(round(model_time))+'\n')
 
-    model_face.clean()
-    model_land.clean()
-    model_pose.clean()
-    model_gaze.clean()
-
-    cap.release()
     cv2.destroyAllWindows()
-
     out.release()
+    
     if args.write_intermediate == 'yes':
         out_fm.release()
         out_pm.release()
