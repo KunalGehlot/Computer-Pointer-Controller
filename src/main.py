@@ -83,7 +83,7 @@ def main():
     out = cv2.VideoWriter(os.path.join(args.output_dir, "output.mp4"),
                           cv2.VideoWriter_fourcc(*"MP4V"), fps, (initial_w, initial_h), True)
 
-    if args.write_intermediate == 'yes':
+    if args.output_intermediate == 'yes':
         out_fm = cv2.VideoWriter(os.path.join(args.output_dir, "output_fm.mp4"),
                                  cv2.VideoWriter_fourcc(*"MP4V"), fps, (initial_w, initial_h), True)
         out_lm = cv2.VideoWriter(os.path.join(args.output_dir, "output_lm.mp4"),
@@ -131,74 +131,133 @@ def main():
     frames = 0
     inference_time = 0
     inf_start_time = time.time()
+    controller = MouseController("medium", "fast")
 
     for flag, frame in feed.next_batch():
+
         if not flag:
             break
 
         frames += 1
+        DET_FLAG = False
 
         if frames % 5 == 0:
             cv2.imshow('video', cv2.resize(frame, (500, 500)))
 
         key = cv2.waitKey(60)
         infer_start = time.time()
-        croppedFace, face_coords = fdM.predict(
+
+        coords, frame = model_face.predict(
             frame.copy(), args.prob_threshold)
-        if type(croppedFace) == int:
+
+        if args.output_intermediate == 'yes':
+            out_fm.write(frame)
+
+        if type(coords) == int:
             logger.error("No face detected.")
             if key == 27:
                 break
             continue
 
-        outS = hpM.predict(croppedFace.copy())
-        lEye, rEye, eye_coords = flM.predict(croppedFace.copy())
-        new_coord, gaze_vector = geM.predict(lEye, rEye, outS)
+        if len(coords) > 0:
 
-        infer_stop = time.time()
-        inference_time += (infer_stop - infer_start)
+            [xmin, ymin, xmax, ymax] = coords[0]
+            head_pose = frame[ymin:ymax, xmin:xmax]
+            is_looking, pose_angles = model_pose.predict(head_pose)
+            if args.write_intermediate == 'yes':
+                p = "Pose Angles {}, is Looking? {}".format(
+                    pose_angles, is_looking)
+                cv2.putText(frame, p, (50, 15), cv2.FONT_HERSHEY_COMPLEX,
+                            0.5, (255, 0, 0), 1)
+                out_pm.write(frame)
 
-        new_frame = frame.copy()
-        new_frame = croppedFace
+            if is_looking:
+                DET_FLAG = True
+                coords, f = model_land.predict(head_pose)
 
-        cv2.rectangle(croppedFace, (eye_coords[0][0]-10, eye_coords[0][1]-10),
-                      (eye_coords[0][2]+10, eye_coords[0][3]+10), (0, 255, 0), 3)
-        cv2.rectangle(croppedFace, (eye_coords[1][0]-10, eye_coords[1][1]-10),
-                      (eye_coords[1][2]+10, eye_coords[1][3]+10), (0, 255, 0), 3)
+                frame[ymin:ymax, xmin:xmax] = f
 
-        cv2.putText(new_frame, "Pose Angles: yaw:{:.2f} | pitch:{:.2f} | roll:{:.2f}".format(
-            outS[0], outS[1], outS[2]), (10, 20), cv2.FONT_HERSHEY_COMPLEX, 0.25, (0, 255, 0), 1)
+                if args.write_intermediate == "yes":
+                    out_lm.write(frame)
 
-        x, y, w = int(gaze_vector[0]*12), int(gaze_vector[1]*12), 160
-        le = cv2.line(lEye.copy(), (x-w, y-w),
-                      (x+w, y+w), (255, 0, 255), 2)
-        cv2.line(le, (x-w, y+w), (x+w, y-w), (255, 0, 255), 2)
-        re = cv2.line(rEye.copy(), (x-w, y-w),
-                      (x+w, y+w), (255, 0, 255), 2)
-        cv2.line(re, (x-w, y+w), (x+w, y-w), (255, 0, 255), 2)
-        croppedFace[eye_coords[0][1]:eye_coords[0][3],
-                    eye_coords[0][0]:eye_coords[0][2]] = le
-        croppedFace[eye_coords[1][1]:eye_coords[1][3],
-                    eye_coords[1][0]:eye_coords[1][2]] = re
+                [[xlmin, ylmin, xlmax, ylmax], [xrmin, yrmin, xrmax, yrmax]] = coords
+                left_eye_image = f[ylmin:ylmax, xlmin:xlmax]
+                right_eye_image = f[yrmin:yrmax, xrmin:xrmax]
 
-        cv2.imshow("Visualization", cv2.resize(new_frame, (500, 500)))
+                mouse_coords, gaze_vector = model_gaze.predict(
+                    left_eye_image, right_eye_image, pose_angles)
 
+                if args.write_intermediate == 'yes':
+                    p = "Gaze Vector {}".format(gaze_vector)
+                    cv2.putText(frame, p, (50, 15), cv2.FONT_HERSHEY_COMPLEX,
+                                0.5, (255, 0, 0), 1)
+                    fl = gazeMarker(left_eye_image, gaze_vector)
+                    fr = gazeMarker(right_eye_image, gaze_vector)
+                    f[ylmin:ylmax, xlmin:xlmax] = fl
+                    f[yrmin:yrmax, xrmin:xrmax] = fr
+
+                    out_gm.write(frame)
+
+                if frames % 5 == 0:
+                    controller.move(mouse_coords[0], mouse_coords[1])
+
+        inference_time += time.time() - infer_start
+
+        out.write(frame)
         if frames % 5 == 0:
-            M.move(new_coord[0], new_coord[1])
-        if key == 27:
-            break
+            print("Inference time = ", int(time.time()-infer_start))
+            print('Frame count {} and video len {}'.format(
+                frames, video_len))
+        if args.output_dir:
+            total_time = time.time() - infer_start
+            with open(os.path.join(args.output_dir, 'stats.txt'), 'w') as f:
+                f.write(str(round(total_time, 1))+'\n')
+                f.write(str(frames)+'\n')
 
-    fps = frame_count / inference_time
+    if args.output_dir:
+        with open(os.path.join(args.output_dir, 'stats.txt'), 'a') as f:
+            f.write(str(round(model_time))+'\n')
+
+    model_face.clean()
+    model_land.clean()
+    model_pose.clean()
+    model_gaze.clean()
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+    out.release()
+    if args.write_intermediate == 'yes':
+        out_fm.release()
+        out_pm.release()
+        out_lm.release()
+        out_gm.release()
+
+    fps = frames / inference_time
     logger.error("Video Done...")
-    logger.error("Total Loading time: " + str(model_loading_time) + " s")
+    logger.error("Total Loading time: " + str(model_time) + " s")
     logger.error("Total Inference time {} s".format(inference_time))
     logger.error("Average Inference time: " +
-                 str(inference_time/frame_count) + " s")
+                 str(inference_time/frames) + " s")
     logger.error("fps {} frames/second".format(fps/5))
 
     cv2.destroyAllWindows()
     feed.close()
 
 
+def gazeMarker(screen_img, gaze_pts, gaze_colors=None, scale=4, return_img=False, cross_size=16, thickness=10):
+    width = int(cross_size * scale)
+    drawX(screen_img, gaze_pts[0] * scale, gaze_pts[1] * scale,
+          (0, 0, 255), width, thickness)
+    return screen_img
+
+
+def drawX(bgr_img, x, y, color=(255, 255, 255), width=2, thickness=0.5):
+    x, y, w = int(x), int(y), int(width / 2)
+    cv2.line(bgr_img, (x - w, y - w), (x + w, y + w), color, thickness)
+    cv2.line(bgr_img, (x - w, y + w), (x + w, y - w), color, thickness)
+
+
 if __name__ == '__main__':
     main()
+    sys.exit()
