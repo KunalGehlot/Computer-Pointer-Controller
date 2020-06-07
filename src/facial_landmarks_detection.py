@@ -4,103 +4,143 @@ This has been provided just to give you an idea of how to structure your model c
 '''
 import cv2
 import numpy as np
-from openvino.inference_engine import IECore, IENetwork
+import math
+import os
+from openvino.inference_engine import IECore, IENetwork, IEPlugin
 
 
-class FacialLandmarksDetectionModel:
+
+class FaceLandmarksDetection:
+
     '''
     Class for the Face Detection Model.
     '''
 
-    def __init__(self, model_name, device='CPU', extensions=None):
-
-        self.model_name = model_name
-        self.device = device
-        self.extensions = extensions
-        self.model_structure = self.model_name
-        self.model_weights = self.model_name.split('.')[0]+'.bin'
+    def __init__(self, model_name, threshold, device='CPU', extensions=None, async_mode=True):
+        '''
+        TODO: Use this to set your instance variables.
+        '''
         self.plugin = None
         self.network = None
-        self.exec_net = None
-        self.inp_name = None
-        self.inp_shape = None
-        self.outp_names = None
-        self.outp_shape = None
-
-        try:
-            self.model = IENetwork(self.model_structure, self.model_weights)
-        except Exception as e:
-            raise ValueError(
-                "Could not Initialise the network. Have you enterred the correct model path?")
-
-        self.inp_name = next(iter(self.model.inputs))
-        self.inp_shape = self.model.inputs[self.inp_name].shape
-        self.outp_names = next(iter(self.model.outputs))
-        self.outp_shape = self.model.outputs[self.output_name].shape
+        self.exec_network = None
+        self.input_blob = None
+        self.output_blob = None
+        self.output_shape = None
+        self.threshold = threshold
+        self.device = device
+        self.model_name = model_name
+        self.extensions = extensions
+        self.initial_w = None
+        self.initial_h = None
+        self.async_mode = async_mode
 
     def load_model(self):
+        '''
+        TODO: You will need to complete this method.
+        This method is for loading the model to the device specified by the user.
+        If your model requires any Plugins, this is where you can load them.
+        '''
+        model_xml = self.model_name
+        model_bin = os.path.splitext(model_xml)[0] + ".bin"
 
-        self.plugin = IECore()
-        supported_layers = self.plugin.query_network(
-            network=self.model, device_name=self.device)
-        unsupported_layers = [
-            l for l in self.model.layers.keys() if l not in supported_layers]
+        self.plugin = IEPlugin(device=self.device)
 
-        if len(unsupported_layers) != 0:
-            print("unsupported layers found")
-            exit(1)
+        if self.extensions and "CPU" in self.device:
+            self.plugin.add_cpu_extension(self.extensions)
 
-        self.exec_net = self.plugin.load_network(
-            network=self.model, device_name=self.device, num_requests=1)
+        self.network = IENetwork(model=model_xml, weights=model_bin)
+
+        self.check_plugin(self.plugin)
+
+        self.exec_network = self.plugin.load(self.network)
+
+        self.input_blob = next(iter(self.network.inputs))
+        self.output_blob = next(iter(self.network.outputs))
+        self.output_shape = self.network.outputs[self.output_blob].shape
+        print("Face landmark Detection Model output shape : ", self.output_shape)
 
     def predict(self, image):
+        '''
+        TODO: You will need to complete this method.
+        This method is meant for running predictions on the input image.
+        '''
+        count = 0
+        coords = None
+        self.initial_w = image.shape[1]
+        self.initial_h = image.shape[0]
+        frame = self.preprocess_input(image)
+        if self.async_mode:
+            self.exec_network.requests[0].async_infer(
+                inputs={self.input_blob: frame})
+        else:
+            self.exec_network.requests[0].infer(
+                inputs={self.input_blob: frame})
 
-        self.processed_image = self.preprocess_input(image)
-        outputs = self.exec_net.infer({self.inp_name: self.processed_image})
-        coords = self.preprocess_output(outputs)
+        if self.exec_network.requests[0].wait(-1) == 0:
+            outputs = self.exec_network.requests[0].outputs[self.output_blob]
+            frame, coords = self.preprocess_output(image, outputs)
+            return coords, frame
 
-        h = image.shape[0]
-        w = image.shape[1]
-
-        coords = coords * np.array([w, h, w, h])
-        coords = coords.astype(np.int32)
-
-        l_xmin = coords[0]-10
-        l_xmax = coords[0]+10
-        l_ymin = coords[1]-10
-        l_ymax = coords[1]+10
-        r_xmin = coords[2]-10
-        r_xmax = coords[2]+10
-        r_ymin = coords[3]-10
-        r_ymax = coords[3]+10
-
-        left_eye = image[l_ymin:l_ymax, l_xmin:l_xmax]
-        right_eye = image[r_ymin:r_ymax, r_xmin:r_xmax]
-        eye_coords = [[l_xmin, l_ymin, l_xmax, l_ymax],
-                      [r_xmin, r_ymin, r_xmax, r_ymax]]
-
-        return left_eye, right_eye, eye_coords
-
-    def check_model(self):
-        pass
+    def check_plugin(self, plugin):
+        '''
+        TODO: You will need to complete this method as a part of the
+        standout suggestions
+        This method checks whether the model(along with the plugin) is supported
+        on the CPU device or not. If not, then this raises and Exception
+        '''
+        unsupported_layers = [l for l in self.network.layers.keys(
+        ) if l not in self.plugin.get_supported_layers(self.network)]
+        if len(unsupported_layers) != 0:
+            print("Unsupported layers found: {}".format(unsupported_layers))
+            print("Check whether extensions are available to add to IECore.")
+            exit(1)
 
     def preprocess_input(self, image):
+        '''
+        TODO: You will need to complete this method.
+        Before feeding the data into the model for inference,
+        you might have to preprocess it. This function is where you can do that.
+        '''
+        (n, c, h, w) = self.network.inputs[self.input_blob].shape
 
-        image_ct = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        # cv2.resize(frame, (w, h))
-        self.image = cv2.resize(
-            image_ct, (self.inp_shape[3], self.inp_shape[2]))
-        self.image = self.image.transpose((2, 0, 1))
-        self.image = self.image.reshape(1, *self.image.shape)
+        frame = cv2.resize(image, (w, h))
+        frame = frame.transpose((2, 0, 1))
+        frame = frame.reshape((n, c, h, w))
+        return frame
 
-        return self.image
+    def preprocess_output(self, frame, outputs):
+        '''
+        TODO: You will need to complete this method.
+        Before feeding the output of this model to the next model,
+        you might have to preprocess the output. This function is where you can do that.
+        '''
+        current_count = 0
+        coords = []
+        outputs = outputs[0]
 
-    def preprocess_output(self, outputs):
+        xl, yl = outputs[0][0]*self.initial_w, outputs[1][0]*self.initial_h
+        xr, yr = outputs[2][0]*self.initial_w, outputs[3][0]*self.initial_h
 
-        res = outputs[self.output_name][0]
-        l_x = res[0].tolist()[0][0]
-        l_y = res[1].tolist()[0][0]
-        r_x = res[2].tolist()[0][0]
-        r_y = res[3].tolist()[0][0]
+        xlmin = xl-20
+        ylmin = yl-20
+        xlmax = xl+20
+        ylmax = yl+20
+        xrmin = xr-20
+        yrmin = yr-20
+        xrmax = xr+20
+        yrmax = yr+20
 
-        return(l_x, l_y, r_x, r_y)
+        cv2.rectangle(frame, (xlmin, ylmin), (xlmax, ylmax), (0, 55, 255), 1)
+        cv2.rectangle(frame, (xrmin, yrmin), (xrmax, yrmax), (0, 55, 255), 1)
+        coords = [[int(xlmin), int(ylmin), int(xlmax), int(ylmax)], [int(xrmin),
+                                                                     int(yrmin), int(xrmax), int(yrmax)]]
+        return frame, coords
+
+    def clean(self):
+        """
+        Deletes all the instances
+        :return: None
+        """
+        del self.plugin
+        del self.network
+        del self.exec_network

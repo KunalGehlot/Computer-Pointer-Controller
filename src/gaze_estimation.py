@@ -5,84 +5,134 @@ This has been provided just to give you an idea of how to structure your model c
 import cv2
 import numpy as np
 import math
-from openvino.inference_engine import IECore, IENetwork
+import os
+from openvino.inference_engine import IECore, IENetwork, IEPlugin
 
 
-class GazeEstimationModel:
+class GazeEstimation:
     '''
     Class for the Face Detection Model.
     '''
 
-    def __init__(self, model_name, device='CPU', extensions=None):
-
-        self.model_name = model_name
-        self.device = device
-        self.extensions = extensions
-        self.model_structure = self.model_name
-        self.model_weights = self.model_name.split('.')[0]+'.bin'
+    def __init__(self, model_name, threshold, device='CPU', extensions=None, async_mode=True):
+        '''
+        TODO: Use this to set your instance variables.
+        '''
         self.plugin = None
         self.network = None
-        self.exec_net = None
-        self.inp_name = None
-        self.inp_shape = None
-        self.outp_names = None
-        self.outp_shape = None
-
-        try:
-            self.model = IENetwork(self.model_structure, self.model_weights)
-        except Exception as e:
-            raise ValueError(
-                "Could not Initialise the network. Have you enterred the correct model path?")
-
-        self.inp_name = [i for i in self.model.inputs.keys()]
-        self.inp_shape = self.model.inputs[self.inp_name[1]].shape
-        self.outp_names = [a for a in self.model.outputs.keys()]
+        self.exec_network = None
+        self.input_pose_angles = None
+        self.input_left_eye = None
+        self.input_right_eye = None
+        self.output_blob = None
+        self.output_shape = None
+        self.threshold = threshold
+        self.device = device
+        self.model_name = model_name
+        self.extensions = extensions
+        self.initial_w = None
+        self.initial_h = None
+        self.async_mode = async_mode
 
     def load_model(self):
+        '''
+        TODO: You will need to complete this method.
+        This method is for loading the model to the device specified by the user.
+        If your model requires any Plugins, this is where you can load them.
+        '''
+        model_xml = self.model_name
+        model_bin = os.path.splitext(model_xml)[0] + ".bin"
 
-        self.plugin = IECore()
-        supported_layers = self.plugin.query_network(
-            network=self.model, device_name=self.device)
-        unsupported_layers = [
-            l for l in self.model.layers.keys() if l not in supported_layers]
+        self.plugin = IEPlugin(device=self.device)
+
+        if self.extensions and "CPU" in self.device:
+            self.plugin.add_cpu_extension(self.extensions)
+
+        self.network = IENetwork(model=model_xml, weights=model_bin)
+        self.check_plugin(self.plugin)
+        self.exec_network = self.plugin.load(self.network)
+        self.input_pose_angles = self.network.inputs['head_pose_angles']
+
+        self.output_blob = next(iter(self.network.outputs))
+        self.output_shape = self.network.outputs[self.output_blob].shape
+        print("GazeEstimation Model output shape : ", self.output_shape)
+
+    def check_plugin(self, plugin):
+        '''
+        TODO: You will need to complete this method as a part of the
+        standout suggestions
+        This method checks whether the model(along with the plugin) is supported
+        on the CPU device or not. If not, then this raises and Exception
+        '''
+        unsupported_layers = [l for l in self.network.layers.keys(
+        ) if l not in self.plugin.get_supported_layers(self.network)]
         if len(unsupported_layers) != 0:
-            print("unsupported layers found")
+            print("Unsupported layers found: {}".format(unsupported_layers))
+            print("Check whether extensions are available to add to IECore.")
             exit(1)
-        self.exec_net = self.plugin.load_network(
-            network=self.model, device_name=self.device, num_requests=1)
 
-    def predict(self, l_eye, r_eye, angle):
+    def predict(self, left_eye_image, right_eye_image, pose_angles):
+        '''
+        TODO: You will need to complete this method.
+        This method is meant for running predictions on the input image.
+        '''
+        count = 0
+        coords = None
+        self.initial_w = left_eye_image.shape[1]
+        self.initial_h = left_eye_image.shape[0]
+        left_eye_image, right_eye_image = self.preprocess_input(
+            left_eye_image, right_eye_image)
 
-        lProcessed, rProcessed = self.preprocess_input(
-            l_eye, r_eye)
-        outputs = self.exec_net.infer(
-            {'head_pose_angles': angle, 'left_eye_image': lProcessed, 'right_eye_image': rProcessed})
-        m_coord, gaze_vector = self.preprocess_output(outputs, angle)
+        if self.async_mode:
+            self.exec_network.requests[0].async_infer(inputs={"head_pose_angles": pose_angles, "left_eye_image": left_eye_image,
+                                                              "right_eye_image": right_eye_image})
+        else:
+            self.exec_network.requests[0].infer(inputs={"head_pose_angles": pose_angles, "left_eye_image": left_eye_image,
+                                                        "right_eye_image": right_eye_image})
 
-        return m_coord, gaze_vector
+        if self.exec_network.requests[0].wait(-1) == 0:
+            outputs = self.exec_network.requests[0].outputs[self.output_blob]
+            out = self.preprocess_output(
+                left_eye_image, right_eye_image, pose_angles, outputs)
+            return out
 
-    def check_model(self):
-        pass
+    def preprocess_input(self, left_eye_image, right_eye_image):
+        '''
+        TODO: You will need to complete this method.
+        Before feeding the data into the model for inference,
+        you might have to preprocess it. This function is where you can do that.
+        '''
 
-    def preprocess_input(self, lEye, rEye):
+        left_eye_image = cv2.resize(left_eye_image, (60, 60))
+        left_eye_image = left_eye_image.transpose((2, 0, 1))
+        left_eye_image = left_eye_image.reshape((1, 3, 60, 60))
+        right_eye_image = cv2.resize(right_eye_image, (60, 60))
+        right_eye_image = right_eye_image.transpose((2, 0, 1))
+        right_eye_image = right_eye_image.reshape((1, 3, 60, 60))
 
-        self.lEye = cv2.resize(lEye, (self.inp_shape[3], self.inp_shape[2]))
-        self.rEye = cv2.resize(rEye, (self.inp_shape[3], self.inp_shape[2]))
-        self.lEye = self.lEye.transpose((2, 0, 1))
-        self.rEye = self.rEye.transpose((2, 0, 1))
-        self.lEye = self.lEye.reshape(1, *self.lEye.shape)
-        self.rEye = self.rEye.reshape(1, *self.rEye.shape)
+        return left_eye_image, right_eye_image
 
-        return self.lEye, self.rEye
+    def preprocess_output(self, left_eye_image, right_eye_image, pose_angles, outputs):
+        '''
+        TODO: You will need to complete this method.
+        Before feeding the output of this model to the next model,
+        you might have to preprocess the output. This function is where you can do that.
+        '''
+        gaze_vector = outputs[0]
+        roll = gaze_vector[2]
+        gaze_vector = gaze_vector / np.linalg.norm(gaze_vector)
+        cs = math.cos(roll * math.pi / 180.0)
+        sn = math.sin(roll * math.pi / 180.0)
+        tmpX = gaze_vector[0] * cs + gaze_vector[1] * sn
+        tmpY = -gaze_vector[0] * sn + gaze_vector[1] * cs
 
-    def preprocess_output(self, outputs, angle):
+        return (tmpX, tmpY), (gaze_vector)
 
-        gaze_vector = outputs[self.outp_names[0]].tolist()[0]
-
-        x = angle[2]
-        cosValue = math.cos(x * math.pi / 180.0)
-        sinValue = math.sin(x * math.pi / 180.0)
-        x_coords = gaze_vector[0] * cosValue + gaze_vector[1] * sinValue
-        y_coords = -gaze_vector[0] * sinValue + gaze_vector[1] * cosValue
-
-        return (x_coords, y_coords), gaze_vector
+    def clean(self):
+        """
+        Deletes all the instances
+        :return: None
+        """
+        del self.plugin
+        del self.network
+        del self.exec_network

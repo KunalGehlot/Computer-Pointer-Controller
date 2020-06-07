@@ -8,90 +8,132 @@ import os
 from openvino.inference_engine import IECore, IENetwork, IEPlugin
 
 
-class FaceDetectionModel:
+class FaceDetection:
     '''
         Class for the Face Detection Model.
     '''
 
-    def __init__(self, model_name, device='CPU', extensions=None):
-        self.model_name = model_name
-        self.device = device
-        self.extensions = extensions
-        self.model_structure = self.model_name
-        self.model_weights = self.model_name.split('.')[0]+'.bin'
+    def __init__(self, model_name, threshold, device='CPU', extensions=None, async_mode=True):
+        '''
+            TODO: Use this to set your instance variables.
+        '''
         self.plugin = None
         self.network = None
-        self.exec_net = None
-        self.inp_name = None
-        self.inp_shape = None
-        self.outp_names = None
-        self.outp_shape = None
-
-        try:
-            self.model = IENetwork(self.model_structure, self.model_weights)
-        except Exception as e:
-            raise ValueError(
-                "Could not Initialise the network. Have you enterred the correct model path?")
-
-        self.inp_name = next(iter(self.model.inputs))
-        self.inp_shape = self.model.inputs[self.inp_name].shape
-        self.outp_names = next(iter(self.model.outputs))
-        self.outp_shape = self.model.outputs[self.output_name].shape
+        self.exec_network = None
+        self.input_blob = None
+        self.output_blob = None
+        self.output_shape = None
+        self.threshold = threshold
+        self.device = device
+        self.model_name = model_name
+        self.extensions = extensions
+        self.initial_w = None
+        self.initial_h = None
+        self.async_mode = async_mode
 
     def load_model(self):
+        '''
+            TODO: You will need to complete this method.
+            This method is for loading the model to the device specified by the user.
+            If your model requires any Plugins, this is where you can load them.
+        '''
+        model_xml = self.model_name
+        model_bin = os.path.splitext(model_xml)[0] + ".bin"
 
-        self.plugin = IECore()
+        self.plugin = IEPlugin(device=self.device)
 
-        supported_layers = self.plugin.query_network(
-            network=self.model, device_name=self.device)
-        unsupported_layers = [
-            l for l in self.model.layers.keys() if l not in supported_layers]
+        if self.extensions and "CPU" in self.device:
+            self.plugin.add_cpu_extension(self.extensions)
 
+        self.network = IENetwork(model=model_xml, weights=model_bin)
+        self.check_plugin(self.plugin)
+        self.exec_network = self.plugin.load(self.network)
+
+        self.input_blob = next(iter(self.network.inputs))
+        self.output_blob = next(iter(self.network.outputs))
+        self.output_shape = self.network.outputs[self.output_blob].shape
+        print("Face Detection output shape : ", self.output_shape)
+
+    def predict(self, image):
+        '''
+            TODO: You will need to complete this method.
+            This method is meant for running predictions on the input image.
+        '''
+        count = 0
+        coords = None
+        self.initial_w = image.shape[1]
+        self.initial_h = image.shape[0]
+        frame = self.preprocess_input(image)
+        if self.async_mode:
+            self.exec_network.requests[0].async_infer(
+                inputs={self.input_blob: frame})
+        else:
+            self.exec_network.requests[0].infer(
+                inputs={self.input_blob: frame})
+
+        if self.exec_network.requests[0].wait(-1) == 0:
+            outputs = self.exec_network.requests[0].outputs[self.output_blob]
+            frame, coords = self.preprocess_output(image, outputs)
+            return coords, frame
+
+    def check_plugin(self, plugin):
+        '''
+            TODO: You will need to complete this method as a part of the
+            standout suggestions
+            This method checks whether the model(along with the plugin) is supported
+            on the CPU device or not. If not, then this raises and Exception
+        '''
+        unsupported_layers = [l for l in self.network.layers.keys(
+        ) if l not in self.plugin.get_supported_layers(self.network)]
         if len(unsupported_layers) != 0:
-            print("unsupported layers found")
+            print("Unsupported layers found: {}".format(unsupported_layers))
+            print("Check whether extensions are available to add to IECore.")
             exit(1)
 
-        self.exec_net = self.plugin.load_network(
-            network=self.model, device_name=self.device, num_requests=1)
-
-    def predict(self, image, prob_threshold):
-
-        processed_image = self.preprocess_input(image.copy())
-        outputs = self.exec_net.infer({self.inp_name: processed_image})
-        coords = self.preprocess_output(outputs, prob_threshold)
-
-        if (len(coords) == 0):
-            return 0, 0
-        coords = coords[0]
-        h = image.shape[0]
-        w = image.shape[1]
-        coords = coords * np.array([w, h, w, h])
-        coords = coords.astype(np.int32)
-
-        cropped_face = image[coords[1]:coords[3], coords[0]:coords[2]]
-        return cropped_face, coords
-
-    def check_model(self):
-        pass
-
     def preprocess_input(self, image):
-        # cv2.resize(frame, (w, h))
-        self.image = cv2.resize(image, (self.inp_shape[3], self.inp_shape[2]))
-        self.image = self.image.transpose((2, 0, 1))
-        self.image = self.image.reshape(1, *self.image.shape)
+        '''
+            TODO: You will need to complete this method.
+            Before feeding the data into the model for inference,
+            you might have to preprocess it. This function is where you can do that.
+        '''
+        (n, c, h, w) = self.network.inputs[self.input_blob].shape
+        frame = cv2.resize(image, (w, h))
+        frame = frame.transpose((2, 0, 1))
+        frame = frame.reshape((n, c, h, w))
+        return frame
 
-        return self.image
-
-    def preprocess_output(self, outputs, prob_threshold):
-
+    def preprocess_output(self, frame, outputs):
+        '''
+            TODO: You will need to complete this method.
+            Before feeding the output of this model to the next model,
+            you might have to preprocess the output. This function is where you can do that.
+        '''
+        current_count = 0
         coords = []
-        outs = outputs[self.output_name][0][0]
-        for out in outs:
-            conf = out[2]
-            if conf > prob_threshold:
-                x_min = out[3]
-                y_min = out[4]
-                x_max = out[5]
-                y_max = out[6]
-                coords.append([x_min, y_min, x_max, y_max])
-        return coords
+        for obj in outputs[0][0]:
+
+            if obj[2] > float(self.threshold):
+                if obj[3] < 0:
+                    obj[3] = -obj[3]
+                if obj[4] < 0:
+                    obj[4] = -obj[4]
+                xmin = int(obj[3] * self.initial_w) - 10
+                ymin = int(obj[4] * self.initial_h) - 10
+                xmax = int(obj[5] * self.initial_w) + 10
+                ymax = int(obj[6] * self.initial_h) + 10
+
+                cv2.rectangle(frame, (xmin, ymin),
+                              (xmax, ymax), (0, 55, 255), 1)
+                current_count = current_count + 1
+                coords.append([xmin, ymin, xmax, ymax])
+                break
+        return frame, coords
+
+    def clean(self):
+        """
+            Deletes all the instances
+            :return: None
+        """
+        del self.plugin
+        del self.network
+        del self.exec_network
