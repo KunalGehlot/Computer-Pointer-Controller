@@ -4,7 +4,7 @@ import os
 from openvino.inference_engine import IECore, IENetwork, IEPlugin
 
 
-class FaceDetection:
+class FaceDetectionModel:
     def __init__(self, model_name, threshold, device='CPU', extensions=None, async_mode=True):
         self.model_name = model_name
         self.device = device
